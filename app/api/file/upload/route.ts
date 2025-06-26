@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         const fileData = {
             name: originalFileName,
             path: uploadResponse.filePath,
+            imagekitId: uploadResponse.fileId,
             size: file.size,
             type: file.type,
             fileUrl: uploadResponse.url,
