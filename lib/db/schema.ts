@@ -7,6 +7,7 @@ export const files = pgTable("files", {
     // basic file/folder information
     name: text("name").notNull(),
     path: text("path").notNull(),
+    imagekitId: text("imagekit_id"),
     size: integer("size").notNull(),
     type: text("type").notNull(), // 'file' or 'folder'
 
