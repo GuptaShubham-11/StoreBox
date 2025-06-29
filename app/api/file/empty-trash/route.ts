@@ -14,7 +14,7 @@ const imagekit = new ImageKit({
     urlEndpoint: process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT,
 });
 
-export async function POST(req: NextRequest) {
+export async function DELETE(req: NextRequest) {
     try {
         const body = await req.json();
         const { bodyUserId } = body;
