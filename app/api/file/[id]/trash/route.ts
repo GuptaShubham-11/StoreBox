@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(req: NextRequest, props: { params: { id: string } }) {
+export default async function PATCH(req: NextRequest, props: { params: { id: string } }) {
     try {
         const fileOrFolderId = props.params.id;
         const { bodyUserId } = await req.json();
@@ -16,7 +16,6 @@ export async function POST(req: NextRequest, props: { params: { id: string } }) 
             return NextResponse.json({ error: "User ID is required" }, { status: 400 });
         }
 
-        // Check if the ID belongs to a folder
         const [target] = await db
             .select()
             .from(files)
@@ -33,38 +32,61 @@ export async function POST(req: NextRequest, props: { params: { id: string } }) 
 
         const newTrashStatus = !target.isTrash;
 
+        // IDs to update: start with target
+        const idsToUpdate: string[] = [fileOrFolderId];
+
         if (target.isFolder) {
-            // It's a folder — move the folder and all its contents to trash or restore
-            await db
-                .update(files)
-                .set({ isTrash: newTrashStatus })
-                .where(
-                    or(
-                        and(
-                            eq(files.id, fileOrFolderId),
-                            eq(files.userId, bodyUserId)
-                        ),
-                        and(
-                            eq(files.parentId, fileOrFolderId),
-                            eq(files.userId, bodyUserId)
-                        )
-                    )
-                );
-        } else {
-            // It's a file — only update the file itself
-            await db
-                .update(files)
-                .set({ isTrash: newTrashStatus })
-                .where(
-                    and(eq(files.id, fileOrFolderId), eq(files.userId, bodyUserId))
-                );
+            const nestedItems = await getAllNestedFileIds(fileOrFolderId, bodyUserId);
+            idsToUpdate.push(...nestedItems);
         }
 
-        return NextResponse.json({ message: newTrashStatus ? "Moved to trash" : "Restored from trash" }, { status: 200 });
+        // Update all targeted files/folders
+        await db
+            .update(files)
+            .set({ isTrash: newTrashStatus })
+            .where(
+                and(
+                    inArray(files.id, idsToUpdate),
+                    eq(files.userId, bodyUserId)
+                )
+            );
+
+        return NextResponse.json(
+            { message: newTrashStatus ? "Moved to trash" : "Restored from trash" },
+            { status: 200 }
+        );
     } catch (error) {
         console.error("Move to Trash Failed: ", error);
-        return NextResponse.json({
-            error: "Move to Trash Failed!"
-        }, { status: 500 });
+        return NextResponse.json(
+            { error: "Move to Trash Failed!" },
+            { status: 500 }
+        );
     }
+}
+
+// Recursively get all child file/folder IDs inside a folder
+async function getAllNestedFileIds(folderId: string, userId: string): Promise<string[]> {
+    const allIds: string[] = [];
+
+    async function recurse(currentId: string) {
+        const children = await db
+            .select()
+            .from(files)
+            .where(
+                and(
+                    eq(files.parentId, currentId),
+                    eq(files.userId, userId)
+                )
+            );
+
+        for (const child of children) {
+            allIds.push(child.id);
+            if (child.isFolder) {
+                await recurse(child.id);
+            }
+        }
+    }
+
+    await recurse(folderId);
+    return allIds;
 }
